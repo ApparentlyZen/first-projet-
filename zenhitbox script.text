@@ -1,0 +1,233 @@
+-- SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+-- CONFIG
+local ENABLED_HITBOX = false
+local ENABLED_ESP = false
+local HITBOX_SIZE = 20
+local ESP_COLOR = Color3.fromRGB(255, 0, 0)
+
+local modified = {}
+local boxes = {}
+
+------------------------------------------------
+-- HITBOX LOGIC
+------------------------------------------------
+
+local function createVisualHead(realHead)
+    local clone = realHead:Clone()
+    clone.Name = "VisualHead"
+    clone.Size = Vector3.new(2, 1, 1)
+    clone.Transparency = 0
+    clone.CanCollide = false
+    clone.Massless = true
+    clone.Parent = realHead.Parent
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = realHead
+    weld.Part1 = clone
+    weld.Parent = clone
+
+    return clone
+end
+
+local function applyHitbox(character)
+    if modified[character] then return end
+    local head = character:FindFirstChild("Head")
+    if not head then return end
+
+    modified[character] = {
+        Size = head.Size,
+        Transparency = head.Transparency,
+        Visual = nil
+    }
+
+    head.Size = Vector3.new(HITBOX_SIZE, HITBOX_SIZE, HITBOX_SIZE)
+    head.Transparency = 1
+    head.CanCollide = false
+    head.Massless = true
+
+    modified[character].Visual = createVisualHead(head)
+end
+
+local function restoreHitbox(character)
+    local data = modified[character]
+    if not data then return end
+    local head = character:FindFirstChild("Head")
+    if head then
+        head.Size = data.Size
+        head.Transparency = data.Transparency
+    end
+    if data.Visual then
+        data.Visual:Destroy()
+    end
+    modified[character] = nil
+end
+
+local function refreshHitboxes()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            restoreHitbox(plr.Character)
+            if ENABLED_HITBOX then
+                applyHitbox(plr.Character)
+            end
+        end
+    end
+end
+
+------------------------------------------------
+-- ESP
+------------------------------------------------
+
+local function createESP(char)
+    local box = Instance.new("BoxHandleAdornment")
+    box.Adornee = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    box.Size = Vector3.new(2, 5, 1)
+    box.Color3 = ESP_COLOR
+    box.Transparency = 0.5
+    box.Parent = workspace
+    boxes[char] = box
+end
+
+local function removeESP(char)
+    if boxes[char] then
+        boxes[char]:Destroy()
+        boxes[char] = nil
+    end
+end
+
+local function refreshESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            removeESP(plr.Character)
+            if ENABLED_ESP then
+                createESP(plr.Character)
+            end
+        end
+    end
+end
+
+------------------------------------------------
+-- PLAYER EVENTS
+------------------------------------------------
+
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if ENABLED_HITBOX then applyHitbox(char) end
+        if ENABLED_ESP then createESP(char) end
+    end)
+end)
+
+------------------------------------------------
+-- GUI
+------------------------------------------------
+
+local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+gui.Name = "DarkHub"
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 260, 0, 240)
+frame.Position = UDim2.new(0.5, -130, 0.5, -120)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.ClipsDescendants = true
+frame.Name = "MainFrame"
+
+-- Title
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 40)
+title.Position = UDim2.new(0,0,0,0)
+title.BackgroundColor3 = Color3.fromRGB(25,25,25)
+title.Text = "Dark Hub"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+
+-- Hitbox Toggle
+local hbToggle = Instance.new("TextButton", frame)
+hbToggle.Size = UDim2.new(0.8,0,0,40)
+hbToggle.Position = UDim2.new(0.1,0,0.15,0)
+hbToggle.BackgroundColor3 = Color3.fromRGB(180,50,50)
+hbToggle.TextColor3 = Color3.new(1,1,1)
+hbToggle.Font = Enum.Font.SourceSansBold
+hbToggle.Text = "Hitbox OFF"
+hbToggle.AutoButtonColor = true
+hbToggle.MouseButton1Click:Connect(function()
+    ENABLED_HITBOX = not ENABLED_HITBOX
+    hbToggle.Text = ENABLED_HITBOX and "Hitbox ON" or "Hitbox OFF"
+    hbToggle.BackgroundColor3 = ENABLED_HITBOX and Color3.fromRGB(50,180,50) or Color3.fromRGB(180,50,50)
+    refreshHitboxes()
+end)
+
+-- ESP Toggle
+local espToggle = Instance.new("TextButton", frame)
+espToggle.Size = UDim2.new(0.8,0,0,40)
+espToggle.Position = UDim2.new(0.1,0,0.35,0)
+espToggle.BackgroundColor3 = Color3.fromRGB(180,50,50)
+espToggle.TextColor3 = Color3.new(1,1,1)
+espToggle.Font = Enum.Font.SourceSansBold
+espToggle.Text = "ESP OFF"
+espToggle.AutoButtonColor = true
+espToggle.MouseButton1Click:Connect(function()
+    ENABLED_ESP = not ENABLED_ESP
+    espToggle.Text = ENABLED_ESP and "ESP ON" or "ESP OFF"
+    espToggle.BackgroundColor3 = ENABLED_ESP and Color3.fromRGB(50,180,50) or Color3.fromRGB(180,50,50)
+    refreshESP()
+end)
+
+-- Hitbox Size Input
+local sizeLabel = Instance.new("TextLabel", frame)
+sizeLabel.Size = UDim2.new(1,0,0,25)
+sizeLabel.Position = UDim2.new(0,0,0.6,0)
+sizeLabel.BackgroundTransparency = 1
+sizeLabel.TextColor3 = Color3.new(1,1,1)
+sizeLabel.Text = "Hitbox Size: "..HITBOX_SIZE
+sizeLabel.Font = Enum.Font.SourceSans
+sizeLabel.TextSize = 18
+
+local sizeBox = Instance.new("TextBox", frame)
+sizeBox.Size = UDim2.new(0.8,0,0,30)
+sizeBox.Position = UDim2.new(0.1,0,0.65,0)
+sizeBox.PlaceholderText = "Enter size (number)"
+sizeBox.Text = tostring(HITBOX_SIZE)
+sizeBox.ClearTextOnFocus = false
+sizeBox.TextColor3 = Color3.new(1,1,1)
+sizeBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+sizeBox.Font = Enum.Font.SourceSansBold
+sizeBox.TextScaled = true
+
+sizeBox.FocusLost:Connect(function(enter)
+    local value = tonumber(sizeBox.Text)
+    if value and value >= 2 then
+        HITBOX_SIZE = value
+        sizeLabel.Text = "Hitbox Size: "..HITBOX_SIZE
+        if ENABLED_HITBOX then refreshHitboxes() end
+    else
+        sizeBox.Text = tostring(HITBOX_SIZE)
+    end
+end)
+
+-- Bouton pour cacher/afficher le menu
+local toggleMenuBtn = Instance.new("TextButton", gui)
+toggleMenuBtn.Size = UDim2.new(0, 120, 0, 30)
+toggleMenuBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleMenuBtn.Text = "Hide Menu"
+toggleMenuBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+toggleMenuBtn.TextColor3 = Color3.new(1,1,1)
+toggleMenuBtn.Font = Enum.Font.SourceSansBold
+
+local menuVisible = true
+
+toggleMenuBtn.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    frame.Visible = menuVisible
+    toggleMenuBtn.Text = menuVisible and "Hide Menu" or "Show Menu"
+end)
