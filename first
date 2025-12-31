@@ -1,0 +1,349 @@
+--==================================================
+-- TOOLS MAGIC | Full Script par Zen
+-- Menu esthétique + Hitbox + ESP + SuperJump + Spin
+--==================================================
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+--==================================================
+-- CONFIG
+--==================================================
+local ENABLED_HITBOX = false
+local ENABLED_ESP = false
+local ENABLED_SUPERJUMP = false
+local ENABLED_SPIN = false
+
+local HITBOX_SIZE = 20
+local ESP_COLOR = Color3.fromRGB(255, 0, 0)
+local SUPERJUMP_POWER = 400
+local SPIN_SPEED = 5
+
+local modified = {}
+local boxes = {}
+
+--==================================================
+-- HITBOX LOGIC
+--==================================================
+local function createVisualHead(realHead)
+    local clone = realHead:Clone()
+    clone.Name = "VisualHead"
+    clone.Size = Vector3.new(2,1,1)
+    clone.Transparency = 0
+    clone.CanCollide = false
+    clone.Massless = true
+    clone.Parent = realHead.Parent
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = realHead
+    weld.Part1 = clone
+    weld.Parent = clone
+    return clone
+end
+
+local function applyHitbox(character)
+    if modified[character] then return end
+    local head = character:FindFirstChild("Head")
+    if not head then return end
+    modified[character] = {Size=head.Size, Transparency=head.Transparency, Visual=nil}
+    head.Size = Vector3.new(HITBOX_SIZE,HITBOX_SIZE,HITBOX_SIZE)
+    head.Transparency = 1
+    head.CanCollide = false
+    head.Massless = true
+    modified[character].Visual = createVisualHead(head)
+end
+
+local function restoreHitbox(character)
+    local data = modified[character]
+    if not data then return end
+    local head = character:FindFirstChild("Head")
+    if head then
+        head.Size = data.Size
+        head.Transparency = data.Transparency
+    end
+    if data.Visual then data.Visual:Destroy() end
+    modified[character] = nil
+end
+
+local function refreshHitboxes()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            restoreHitbox(plr.Character)
+            if ENABLED_HITBOX then applyHitbox(plr.Character) end
+        end
+    end
+end
+
+--==================================================
+-- ESP LOGIC
+--==================================================
+local function createESP(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local box = Instance.new("BoxHandleAdornment")
+    box.Adornee = hrp
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    box.Size = Vector3.new(2,5,1)
+    box.Color3 = ESP_COLOR
+    box.Transparency = 0.5
+    box.Parent = workspace
+    boxes[char] = box
+end
+
+local function removeESP(char)
+    if boxes[char] then boxes[char]:Destroy() boxes[char]=nil end
+end
+
+local function refreshESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            removeESP(plr.Character)
+            if ENABLED_ESP then createESP(plr.Character) end
+        end
+    end
+end
+
+--==================================================
+-- SUPERJUMP LOGIC
+--==================================================
+local attacking = false
+local hitEnemyRecently = false
+
+local function getCharacter() return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() end
+local function isOnGround(humanoid) return humanoid.FloorMaterial ~= Enum.Material.Air end
+
+local function monitorAttacks(humanoid)
+    humanoid.AnimationPlayed:Connect(function(track)
+        local name = string.lower(track.Name)
+        if name:find("attack") or name:find("slash") or name:find("hit") then
+            attacking = true
+            hitEnemyRecently = false
+            task.delay(0.4,function() attacking=false end)
+        end
+    end)
+end
+
+local function monitorHits(character)
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.Touched:Connect(function(hit)
+                local hum = hit.Parent and hit.Parent:FindFirstChild("Humanoid")
+                if hum and hum.Parent ~= character then hitEnemyRecently=true end
+            end)
+        end
+    end
+end
+
+local function setupCharacter(char)
+    local humanoid = char:WaitForChild("Humanoid")
+    monitorAttacks(humanoid)
+    monitorHits(char)
+end
+
+LocalPlayer.CharacterAdded:Connect(setupCharacter)
+if LocalPlayer.Character then setupCharacter(LocalPlayer.Character) end
+
+local function doSuperJump()
+    if not ENABLED_SUPERJUMP then return end
+    local char = getCharacter()
+    local humanoid = char:FindFirstChild("Humanoid")
+    local rootPart = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not rootPart then return end
+    if not isOnGround(humanoid) then return end
+    if attacking and hitEnemyRecently then return end
+    rootPart.Velocity = Vector3.new(0,SUPERJUMP_POWER,0)
+end
+
+UIS.InputBegan:Connect(function(input,gp)
+    if gp then return end
+    if input.KeyCode==Enum.KeyCode.Space then doSuperJump() end
+end)
+UIS.JumpRequest:Connect(doSuperJump)
+
+--==================================================
+-- SPIN LOGIC
+--==================================================
+RunService.RenderStepped:Connect(function()
+    if ENABLED_SPIN then
+        local char = getCharacter()
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(SPIN_SPEED), 0)
+        end
+    end
+end)
+
+--==================================================
+-- PLAYER EVENTS
+--==================================================
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if ENABLED_HITBOX then applyHitbox(char) end
+        if ENABLED_ESP then createESP(char) end
+    end)
+end)
+
+--==================================================
+-- MENU ESTHÉTIQUE
+--==================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "ToolsMagicUI"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.fromScale(0.55,0.65)
+main.Position = UDim2.fromScale(0.5,0.5)
+main.AnchorPoint = Vector2.new(0.5,0.5)
+main.BackgroundColor3 = Color3.fromRGB(28,28,36)
+main.BorderSizePixel = 0
+Instance.new("UICorner", main).CornerRadius=UDim.new(0,16)
+
+local title = Instance.new("TextLabel", main)
+title.Size=UDim2.new(1,-20,0,50)
+title.Position=UDim2.new(0,10,0,10)
+title.BackgroundTransparency=1
+title.Text="TOOLS MAGIC | by Zen"
+title.Font=Enum.Font.GothamBold
+title.TextSize=22
+title.TextColor3=Color3.fromRGB(180,140,255)
+title.TextXAlignment=Enum.TextXAlignment.Left
+
+-- LEFT TABS
+local left = Instance.new("Frame", main)
+left.Size = UDim2.new(0.22,-10,1,-70)
+left.Position = UDim2.new(0,10,0,60)
+left.BackgroundColor3=Color3.fromRGB(34,34,42)
+left.BorderSizePixel=0
+Instance.new("UICorner", left).CornerRadius=UDim.new(0,12)
+
+local function createTab(text,y)
+    local tab=Instance.new("TextLabel",left)
+    tab.Size=UDim2.new(1,-16,0,40)
+    tab.Position=UDim2.new(0,8,0,y)
+    tab.BackgroundColor3=Color3.fromRGB(44,44,52)
+    tab.Text=text
+    tab.Font=Enum.Font.Gotham
+    tab.TextSize=15
+    tab.TextColor3=Color3.fromRGB(230,230,230)
+    Instance.new("UICorner",tab).CornerRadius=UDim.new(0,10)
+end
+
+createTab("Event",10)
+
+-- RIGHT PANEL
+local right=Instance.new("Frame",main)
+right.Size=UDim2.new(0.76,-20,1,-70)
+right.Position=UDim2.new(0.22,20,0,60)
+right.BackgroundColor3=Color3.fromRGB(34,34,42)
+right.BorderSizePixel=0
+Instance.new("UICorner",right).CornerRadius=UDim.new(0,12)
+
+local card=Instance.new("Frame",right)
+card.Size=UDim2.new(0.96,0,0.95,0)
+card.Position=UDim2.new(0.02,0,0.025,0)
+card.BackgroundColor3=Color3.fromRGB(40,40,48)
+card.BorderSizePixel=0
+Instance.new("UICorner",card).CornerRadius=UDim.new(0,14)
+
+local cardTitle=Instance.new("TextLabel",card)
+cardTitle.Size=UDim2.new(1,-20,0,35)
+cardTitle.Position=UDim2.new(0,10,0,10)
+cardTitle.BackgroundTransparency=1
+cardTitle.Text="Features"
+cardTitle.Font=Enum.Font.GothamBold
+cardTitle.TextSize=16
+cardTitle.TextColor3=Color3.fromRGB(255,255,255)
+cardTitle.TextXAlignment=Enum.TextXAlignment.Left
+
+-- GRID TOGGLES
+local toggleYStart=60
+local toggleSpacingX=0.5
+local toggleSpacingY=55
+
+local function createToggleGrid(text,col,row,callback)
+    local toggle=Instance.new("TextButton",card)
+    toggle.Size=UDim2.new(0.48,-10,0,40)
+    toggle.Position=UDim2.new(toggleSpacingX*(col-1),10,0,toggleYStart+toggleSpacingY*(row-1))
+    toggle.BackgroundColor3=Color3.fromRGB(60,60,70)
+    toggle.Text=text.." : OFF"
+    toggle.Font=Enum.Font.Gotham
+    toggle.TextSize=14
+    toggle.TextColor3=Color3.fromRGB(240,240,240)
+    Instance.new("UICorner",toggle).CornerRadius=UDim.new(0,10)
+    local state=false
+    toggle.MouseButton1Click:Connect(function()
+        state=not state
+        toggle.Text=text..(state and " : ON" or " : OFF")
+        callback(state)
+    end)
+    return toggle
+end
+
+-- TOGGLES
+createToggleGrid("Hitbox",1,1,function(v) ENABLED_HITBOX=v refreshHitboxes() end)
+createToggleGrid("ESP",2,1,function(v) ENABLED_ESP=v refreshESP() end)
+createToggleGrid("SuperJump",1,2,function(v) ENABLED_SUPERJUMP=v end)
+createToggleGrid("Spin",2,2,function(v) ENABLED_SPIN=v end)
+
+-- INPUTS
+local function createInputBox(placeholder,xScale,callback)
+    local box=Instance.new("TextBox",card)
+    box.Size=UDim2.new(0.32,-10,0,36)
+    box.Position=UDim2.new(xScale,10,0,200)
+    box.PlaceholderText=placeholder
+    box.Text=""
+    box.BackgroundColor3=Color3.fromRGB(60,60,70)
+    box.TextColor3=Color3.fromRGB(255,255,255)
+    box.Font=Enum.Font.Gotham
+    box.TextSize=14
+    Instance.new("UICorner",box).CornerRadius=UDim.new(0,10)
+    box.FocusLost:Connect(function()
+        local value=tonumber(box.Text)
+        if value then callback(value) end
+    end)
+    return box
+end
+
+createInputBox("Hitbox Size",0.00,function(v) HITBOX_SIZE=v if ENABLED_HITBOX then refreshHitboxes() end end)
+createInputBox("Jump Power",0.34,function(v) SUPERJUMP_POWER=v end)
+createInputBox("Spin Speed",0.68,function(v) SPIN_SPEED=v end)
+
+-- DRAG + TOGGLE LOGO
+local toggleButton=Instance.new("TextButton")
+toggleButton.Size=UDim2.new(0,45,0,45)
+toggleButton.Position=UDim2.new(0,10,0,10)
+toggleButton.BackgroundColor3=Color3.fromRGB(180,140,255)
+toggleButton.Text="🛠"
+toggleButton.TextSize=28
+toggleButton.Font=Enum.Font.GothamBold
+toggleButton.TextColor3=Color3.fromRGB(255,255,255)
+toggleButton.Parent=gui
+Instance.new("UICorner",toggleButton).CornerRadius=UDim.new(0,12)
+toggleButton.MouseButton1Click:Connect(function() main.Visible = not main.Visible end)
+
+-- DRAG LOGIC
+local dragging=false
+local dragInput,mousePos,framePos
+main.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=true
+        mousePos=input.Position
+        framePos=main.Position
+        input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
+    end
+end)
+main.InputChanged:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then
+        dragInput=input
+    end
+end)
+UIS.InputChanged:Connect(function(input)
+    if input==dragInput and dragging then
+        local delta=input.Position-mousePos
+        main.Position=UDim2.new(framePos.X.Scale,framePos.X.Offset+delta.X,framePos.Y.Scale,framePos.Y.Offset+delta.Y)
+    end
+end)
